@@ -1,6 +1,16 @@
-# Cribl Architecture Overview Tool
+# Cribl Cloud Explorer Overview Tool
 
 A Python script that interacts with the Cribl Cloud API to provide a comprehensive overview of your system's architecture. Designed to help engineers quickly understand the environment by summarizing key components.
+
+<details>
+  <summary><b>📸 Click to view Screenshots (Uniform Size)</b></summary>
+  <br>
+  <div style="display: flex; gap: 10px; justify-content: center;">
+      <img src="https://github.com/user-attachments/assets/ce7e3c01-ebaa-48b9-a2b5-bf8298732a12" style="width: 30%; height: 500px; object-fit: cover;" alt="screenshot 1" />
+      <img src="https://github.com/user-attachments/assets/3dc9594e-5061-4ab8-9fa7-1d942f97fb55" style="width: 30%; height: 500px; object-fit: cover;" alt="screenshot 2" />
+      <img src="https://github.com/user-attachments/assets/cdad2856-9b6d-4eca-9554-01e4030ef1c4" style="width: 30%; height: 500px; object-fit: cover;" alt="screenshot 3" />
+  </div>
+</details>
 
 ## Features
 
