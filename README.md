@@ -1,4 +1,4 @@
-# Cribl Cloud Explorer Overview Tool
+# Cribl Cloud Explorer Script
 
 A Python script that interacts with the Cribl Cloud API to provide a comprehensive overview of your system's architecture. Designed to help engineers quickly understand the environment by summarizing key components.
 
