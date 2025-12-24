@@ -16,7 +16,7 @@ Requirements:
 Usage:
     python cribl_explorer.py
 
-Author: Generated for Cribl onboarding purposes
+Author: Andrew Hendrix + Opus 4.5  
 """
 
 import getpass
@@ -44,8 +44,9 @@ ENDPOINTS = {
     'workers': '/api/v1/master/workers',
     'inputs': '/api/v1/m/{group_id}/system/inputs',
     'outputs': '/api/v1/m/{group_id}/system/outputs',
-    'pipelines': '/api/v1/m/{group_id}/system/pipelines',
+    'pipelines': '/api/v1/m/{group_id}/pipelines',  # Pipelines are NOT under /system/
     'routes': '/api/v1/m/{group_id}/routes',
+    'packs': '/api/v1/m/{group_id}/packs',
 }
 
 # HTTP timeout for API requests (in seconds)
@@ -199,6 +200,19 @@ class CriblAPIClient:
             Tuple of (success, list of routes or error message)
         """
         endpoint = ENDPOINTS['routes'].format(group_id=group_id)
+        return self._make_request(endpoint)
+
+    def get_packs(self, group_id: str) -> Tuple[bool, Any]:
+        """
+        Retrieve all packs for a specific worker group.
+
+        Args:
+            group_id: The ID of the worker group
+
+        Returns:
+            Tuple of (success, list of packs or error message)
+        """
+        endpoint = ENDPOINTS['packs'].format(group_id=group_id)
         return self._make_request(endpoint)
 
 
@@ -374,6 +388,36 @@ def extract_route_info(routes_data: Dict) -> List[Dict]:
     return extracted
 
 
+def extract_pack_info(packs_data: Dict) -> List[Dict]:
+    """
+    Extract relevant information from the packs API response.
+
+    Packs are reusable bundles of configurations (pipelines, routes, etc.)
+    that can be shared across groups.
+
+    Args:
+        packs_data: Raw API response containing pack information
+
+    Returns:
+        List of dictionaries with extracted pack details
+    """
+    items = packs_data.get('items', [])
+    extracted = []
+
+    for pack in items:
+        extracted.append({
+            'id': pack.get('id', 'N/A'),
+            'name': pack.get('displayName', pack.get('id', 'N/A')),
+            'version': pack.get('version', 'N/A'),
+            'author': pack.get('author', 'N/A'),
+            'description': pack.get('description', ''),
+            'disabled': pack.get('disabled', False),
+            'source': pack.get('source', 'local'),
+        })
+
+    return extracted
+
+
 # ============================================================================
 # DISPLAY FUNCTIONS
 # ============================================================================
@@ -475,7 +519,7 @@ def display_workers(workers: List[Dict], groups: List[Dict]):
 
 
 def display_group_details(group: Dict, inputs: List[Dict], outputs: List[Dict],
-                         pipelines: List[Dict], routes: List[Dict]):
+                         pipelines: List[Dict], routes: List[Dict], packs: List[Dict] = None):
     """
     Display detailed information for a single worker group.
 
@@ -485,7 +529,10 @@ def display_group_details(group: Dict, inputs: List[Dict], outputs: List[Dict],
         outputs: List of outputs (destinations) for the group
         pipelines: List of pipelines for the group
         routes: List of routes for the group
+        packs: List of packs for the group
     """
+    if packs is None:
+        packs = []
     print_header(f"GROUP DETAILS: {group['name']}", char='-')
 
     # Display Sources (Inputs)
@@ -554,6 +601,24 @@ def display_group_details(group: Dict, inputs: List[Dict], outputs: List[Dict],
         print_table(headers, rows, indent=6)
     else:
         print("      No routes configured.")
+
+    # Display Packs
+    print_subheader(f"Packs ({len(packs)} total)")
+    if packs:
+        headers = ['ID', 'Name', 'Version', 'Author', 'Status']
+        rows = [
+            [
+                p['id'][:25],
+                p['name'][:20],
+                p['version'][:10],
+                p['author'][:15] if p['author'] != 'N/A' else '-',
+                'Disabled' if p['disabled'] else 'Enabled'
+            ]
+            for p in packs
+        ]
+        print_table(headers, rows, indent=6)
+    else:
+        print("      No packs installed.")
 
 
 def display_data_flow_diagram(group: Dict, inputs: List[Dict], outputs: List[Dict],
@@ -632,6 +697,7 @@ def display_architecture_summary(groups: List[Dict], workers: List[Dict],
     total_outputs = sum(len(d.get('outputs', [])) for d in all_group_data.values())
     total_pipelines = sum(len(d.get('pipelines', [])) for d in all_group_data.values())
     total_routes = sum(len(d.get('routes', [])) for d in all_group_data.values())
+    total_packs = sum(len(d.get('packs', [])) for d in all_group_data.values())
 
     online_workers = len([w for w in workers if w['status'] == 'Online'])
 
@@ -645,6 +711,7 @@ def display_architecture_summary(groups: List[Dict], workers: List[Dict],
     Total Destinations:      {total_outputs}
     Total Pipelines:         {total_pipelines}
     Total Routes:            {total_routes}
+    Total Packs:             {total_packs}
 
     Data Flow Overview:
 
@@ -757,6 +824,10 @@ def fetch_all_data(client: CriblAPIClient) -> Tuple[bool, Dict]:
         success, routes_data = client.get_routes(group_id)
         group_data['routes'] = extract_route_info(routes_data) if success else []
 
+        # Fetch packs
+        success, packs_data = client.get_packs(group_id)
+        group_data['packs'] = extract_pack_info(packs_data) if success else []
+
         all_group_data[group_id] = group_data
         print("OK")
 
@@ -838,7 +909,8 @@ def run_explorer(client: CriblAPIClient, data: Dict):
                         group_data.get('inputs', []),
                         group_data.get('outputs', []),
                         group_data.get('pipelines', []),
-                        group_data.get('routes', [])
+                        group_data.get('routes', []),
+                        group_data.get('packs', [])
                     )
                 else:
                     print("    Invalid selection.")
