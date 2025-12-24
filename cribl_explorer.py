@@ -263,13 +263,43 @@ def extract_worker_info(workers_data: Dict) -> List[Dict]:
         # Get worker info from nested structure if present
         info = worker.get('info', {})
 
+        # Determine worker status - check multiple possible field names
+        # The API uses 'disconnected' (false = connected) and 'status' (healthy = online)
+        is_online = False
+
+        # Primary check: disconnected == false means the worker is connected
+        if worker.get('disconnected') is False:
+            is_online = True
+        # Check for status == 'healthy' which indicates an online/healthy worker
+        elif str(worker.get('status', '')).lower() == 'healthy':
+            is_online = True
+        # Legacy checks for older API versions or different response formats
+        elif worker.get('connected') is True:
+            is_online = True
+        elif str(worker.get('status', '')).lower() == 'online':
+            is_online = True
+        elif str(worker.get('state', '')).lower() in ('online', 'healthy'):
+            is_online = True
+        elif str(info.get('status', '')).lower() in ('online', 'healthy'):
+            is_online = True
+        elif str(info.get('state', '')).lower() in ('online', 'healthy'):
+            is_online = True
+
+        # Determine worker type (Stream vs Edge)
+        dist_mode = info.get('cribl', {}).get('distMode', 'worker')
+        if 'edge' in dist_mode.lower():
+            worker_type = 'Edge'
+        else:
+            worker_type = 'Stream'
+
         extracted.append({
             'id': worker.get('id', 'N/A'),
             'hostname': info.get('hostname', worker.get('hostname', 'N/A')),
             'group': worker.get('group', 'N/A'),
-            'status': 'Online' if worker.get('connected', False) else 'Offline',
+            'status': 'Online' if is_online else 'Offline',
             'version': info.get('cribl', {}).get('version', 'N/A'),
             'ip': info.get('host', {}).get('ip', 'N/A'),
+            'type': worker_type,
         })
 
     return extracted
@@ -508,9 +538,9 @@ def display_workers(workers: List[Dict], groups: List[Dict]):
         print_subheader(f"Group: {group['name']} ({len(group_workers)} workers)")
 
         if group_workers:
-            headers = ['Hostname', 'Status', 'Version', 'IP']
+            headers = ['Hostname', 'Type', 'Status', 'Version']
             rows = [
-                [w['hostname'], w['status'], w['version'], w['ip']]
+                [w['hostname'], w['type'], w['status'], w['version']]
                 for w in group_workers
             ]
             print_table(headers, rows, indent=6)
@@ -637,10 +667,10 @@ def display_data_flow_diagram(group: Dict, inputs: List[Dict], outputs: List[Dic
     active_pipelines = [p for p in pipelines if not p['disabled']]
     enabled_routes = [r for r in routes if r['enabled']]
 
-    # Determine unique types for display
-    input_types = list(set(i['type'] for i in active_inputs))[:4]
-    output_types = list(set(o['type'] for o in active_outputs))[:4]
-    pipeline_ids = [p['id'] for p in active_pipelines][:4]
+    # Determine unique types for display (show all)
+    input_types = sorted(set(i['type'] for i in active_inputs))
+    output_types = sorted(set(o['type'] for o in active_outputs))
+    pipeline_ids = sorted([p['id'] for p in active_pipelines])
 
     print()
     print("    " + "=" * 62)
@@ -660,22 +690,16 @@ def display_data_flow_diagram(group: Dict, inputs: List[Dict], outputs: List[Dic
     print("    Source Types:")
     for t in input_types:
         print(f"      - {t}")
-    if len(input_types) < len(set(i['type'] for i in active_inputs)):
-        print(f"      ... and {len(set(i['type'] for i in active_inputs)) - len(input_types)} more")
 
     print()
     print("    Output Types:")
     for t in output_types:
         print(f"      - {t}")
-    if len(output_types) < len(set(o['type'] for o in active_outputs)):
-        print(f"      ... and {len(set(o['type'] for o in active_outputs)) - len(output_types)} more")
 
     print()
     print("    Active Pipelines:")
     for p in pipeline_ids:
         print(f"      - {p}")
-    if len(pipeline_ids) < len(active_pipelines):
-        print(f"      ... and {len(active_pipelines) - len(pipeline_ids)} more")
 
     print()
 
@@ -700,26 +724,55 @@ def display_architecture_summary(groups: List[Dict], workers: List[Dict],
     total_packs = sum(len(d.get('packs', [])) for d in all_group_data.values())
 
     online_workers = len([w for w in workers if w['status'] == 'Online'])
+    stream_workers = [w for w in workers if w['type'] == 'Stream']
+    edge_workers = [w for w in workers if w['type'] == 'Edge']
+    stream_online = len([w for w in stream_workers if w['status'] == 'Online'])
+    edge_online = len([w for w in edge_workers if w['status'] == 'Online'])
+
+    # Organize workers by group
+    workers_by_group: Dict[str, List[Dict]] = {}
+    for worker in workers:
+        group_id = worker['group']
+        if group_id not in workers_by_group:
+            workers_by_group[group_id] = []
+        workers_by_group[group_id].append(worker)
 
     print(f"""
     Cribl Cloud Environment Overview
     ================================
 
     Worker Groups (Fleets):  {len(groups)}
-    Total Workers:           {len(workers)} ({online_workers} online)
+    Stream Workers:          {len(stream_workers)} ({stream_online} online)
+    Edge Nodes:              {len(edge_workers)} ({edge_online} online)
     Total Sources:           {total_inputs}
     Total Destinations:      {total_outputs}
     Total Pipelines:         {total_pipelines}
     Total Routes:            {total_routes}
     Total Packs:             {total_packs}
 
+    Workers by Group/Fleet:
+    -----------------------""")
+
+    for group in groups:
+        group_id = group['id']
+        group_workers = workers_by_group.get(group_id, [])
+        if group_workers:
+            online = len([w for w in group_workers if w['status'] == 'Online'])
+            worker_type = group_workers[0]['type'] if group_workers else 'N/A'
+            print(f"    {group['name']:<25} {len(group_workers):>2} {worker_type:<6} ({online} online)")
+
+    # Show groups with no workers
+    empty_groups = [g for g in groups if g['id'] not in workers_by_group or not workers_by_group[g['id']]]
+    if empty_groups:
+        print(f"\n    Groups with no workers: {', '.join(g['name'] for g in empty_groups)}")
+
+    print(f"""
     Data Flow Overview:
 
         +-------------+    +-------------+    +-------------+    +--------------+
         |   SOURCES   | => |   ROUTES    | => |  PIPELINES  | => | DESTINATIONS |
         | ({total_inputs:^9}) |    | ({total_routes:^9}) |    | ({total_pipelines:^9}) |    | ({total_outputs:^10}) |
         +-------------+    +-------------+    +-------------+    +--------------+
-
     """)
 
 
@@ -869,6 +922,13 @@ def run_explorer(client: CriblAPIClient, data: Dict):
         client: Configured CriblAPIClient instance
         data: Fetched data dictionary
     """
+    # Flush any buffered input from password entry
+    try:
+        import termios
+        termios.tcflush(sys.stdin, termios.TCIFLUSH)
+    except (ImportError, termios.error):
+        pass  # Not available on Windows or if stdin is not a terminal
+
     while True:
         choice = display_menu()
 
@@ -963,7 +1023,7 @@ def run_explorer(client: CriblAPIClient, data: Dict):
             print("\n    Goodbye!")
             return 'QUIT'
 
-        else:
+        elif choice:  # Only show error if user actually entered something
             print("    Invalid option. Please try again.")
 
 
