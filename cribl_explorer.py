@@ -853,6 +853,16 @@ def fetch_all_data(client: CriblAPIClient) -> Tuple[bool, Dict]:
 
     workers = extract_worker_info(workers_data)
 
+    # Update worker counts in groups based on actual fetched workers
+    # The API's workerCount field may not be accurate, so we calculate from real data
+    workers_by_group: Dict[str, int] = {}
+    for worker in workers:
+        group_id = worker['group']
+        workers_by_group[group_id] = workers_by_group.get(group_id, 0) + 1
+
+    for group in groups:
+        group['worker_count'] = workers_by_group.get(group['id'], 0)
+
     # Fetch details for each group
     all_group_data = {}
     for group in groups:
