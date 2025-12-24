@@ -3,7 +3,7 @@
 A Python script that interacts with the Cribl Cloud API to provide a comprehensive overview of your system's architecture. Designed to help engineers quickly understand the environment by summarizing key components.
 
 <details>
-  <summary><b>📸 Click to view Screenshots (Uniform Size)</b></summary>
+  <summary><b>📸 Click to view Screenshots</b></summary>
   <br>
   <div style="display: flex; gap: 10px; justify-content: center;">
       <img src="https://github.com/user-attachments/assets/ce7e3c01-ebaa-48b9-a2b5-bf8298732a12" style="width: 30%; height: 500px; object-fit: cover;" alt="screenshot 1" />
